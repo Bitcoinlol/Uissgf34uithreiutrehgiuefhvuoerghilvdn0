@@ -69,6 +69,7 @@ local recentTargetChanges = {} -- New variable for tracking ball target changes
 local ForceFieldActive = false -- New variable for Force Field status
 local CurrentForceField = nil -- To store the force field instance
 local AutoSpamAntiBallBounceEnabled = false -- New variable for the anti-bounce feature
+local AI_Play_Active = false -- New variable for AI Play toggle
 
 -- Remote detection (unchanged)
 task.spawn(function()
@@ -95,7 +96,7 @@ end)
 -- Utility functions (unchanged)
 local function BlockMovement(actionName, inputState, inputObject)
     return Enum.ContextActionResult.Sink
-}
+end
 
 local function updateNavigation(guiObject)
     GuiService.SelectedObject = guiObject
@@ -577,6 +578,54 @@ Balls.ChildRemoved:Connect(function()
     recentTargetChanges = {}
 end)
 
+-- AI Play Movement Function
+local function handleAIPlay()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    local camera = Workspace.CurrentCamera
+
+    if not character or not humanoid or not hrp or not camera then return end
+
+    local ball = Auto_Parry.Get_Ball()
+    local targetPosition = nil
+
+    if ball then
+        targetPosition = ball.Position
+    else
+        local closestPlayer = Auto_Parry.Closest_Player()
+        if closestPlayer and closestPlayer:FindFirstChild("HumanoidRootPart") then
+            targetPosition = closestPlayer.HumanoidRootPart.Position
+        end
+    end
+
+    if targetPosition then
+        -- Movement logic
+        local directionToTarget = (targetPosition - hrp.Position).Unit
+        local desiredMoveDirection = Vector3.new(directionToTarget.X, 0, directionToTarget.Z)
+        humanoid:WalkTo(hrp.Position + desiredMoveDirection * 10) -- Move towards target, 10 studs in desired direction
+
+        -- Camera control to curve the ball (simplified example)
+        local lookAtPosition = targetPosition
+        if ball then
+            local ballVelocity = ball.AssemblyLinearVelocity
+            -- Predict where the ball will be based on its velocity and distance
+            local predictionTime = (ball.Position - hrp.Position).Magnitude / ballVelocity.Magnitude / 2
+            lookAtPosition = ball.Position + ballVelocity * predictionTime
+        end
+        
+        local currentCFrame = camera.CFrame
+        local targetCFrame = CFrame.new(currentCFrame.Position, lookAtPosition)
+        
+        -- Smoothly interpolate camera CFrame
+        camera.CFrame = currentCFrame:Lerp(targetCFrame, 0.2) -- Adjust lerp factor for smoothness
+    else
+        -- If no ball or player, simply move around randomly or stay still
+        humanoid:WalkTo(hrp.Position + Vector3.new(math.random(-1,1),0,math.random(-1,1)) * 10)
+    end
+end
+
+
 --- Lates-Lib UI Implementation ---
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/lxte/lates-lib/main/Main.lua"))()
 local Window = Library:CreateWindow({
@@ -798,8 +847,6 @@ Window:AddToggle({
         end
     end,
 })
-
--- Removed: Ping Based Parry toggle
 
 Window:AddSlider({
     Title = "Parry Accuracy",
@@ -1137,7 +1184,7 @@ Window:AddToggle({
                     if not AutoManualSpamEnabled then
                         toggleManualSpam(not ManualSpamActive)
                     end
-                end)
+                })
             end
         else
             if CoreGui:FindFirstChild("ManualSpamUI") then
@@ -1264,8 +1311,9 @@ Window:AddToggle({
             CurrentForceField.Parent = char
 
             local originalHealth = char.Humanoid.MaxHealth
-            char.Humanoid.MaxHealth = math.huge
             char.Humanoid.Health = math.huge
+            char.Humanoid.MaxHealth = math.huge
+
 
             Connections_Manager['Force Field Health'] = char.Humanoid.HealthChanged:Connect(function(health)
                 if health < char.Humanoid.MaxHealth then
@@ -1280,8 +1328,8 @@ Window:AddToggle({
             end
             enlargeForceField()
             Connections_Manager['Force Field CharacterAdded'] = LocalPlayer.CharacterAdded:Connect(function(newChar)
-                newChar.Humanoid.MaxHealth = math.huge
                 newChar.Humanoid.Health = math.huge
+                newChar.Humanoid.MaxHealth = math.huge
                 Connections_Manager['Force Field Health'] = newChar.Humanoid.HealthChanged:Connect(function(health)
                     if health < newChar.Humanoid.MaxHealth then
                         newChar.Humanoid.Health = newChar.Humanoid.MaxHealth
@@ -1385,54 +1433,26 @@ Window:AddSection({ Name = "Player Movement", Tab = PlayerTab })
 
 Window:AddToggle({
     Title = "AI Play",
-    Description = "Automatically controls your player like a pro.",
+    Description = "Lets AI control your character like a pro player.",
     Default = false,
     Tab = PlayerTab,
     Callback = function(value)
+        AI_Play_Active = value
         if value then
-            Connections_Manager['AI Play'] = RunService.Heartbeat:Connect(function()
-                local playerCharacter = LocalPlayer.Character
-                local humanoid = playerCharacter and playerCharacter:FindFirstChildOfClass("Humanoid")
-                local rootPart = playerCharacter and playerCharacter:FindFirstChild("HumanoidRootPart")
-                local currentBall = Auto_Parry.Get_Ball()
+            -- Disable manual input when AI Play is active
+            ContextActionService:BindAction('BlockPlayerMovement', BlockMovement, false, Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D, Enum.KeyCode.Space, Enum.UserInputType.Touch)
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter -- Lock mouse for camera control
 
-                if not humanoid or not rootPart or not currentBall then return end
-
-                local ballVelocity = currentBall.AssemblyLinearVelocity
-                local ballSpeed = ballVelocity.Magnitude
-                local ballPosition = currentBall.Position
-                local playerPosition = rootPart.Position
-
-                -- Movement towards the ball
-                local directionToBall = (ballPosition - playerPosition).Unit
-                humanoid:Move(directionToBall)
-
-                -- Maintain a constant walk speed
-                humanoid.WalkSpeed = StrafeSpeed -- Use existing StrafeSpeed slider for AI movement speed
-
-                -- Camera control for "curving" the ball like a pro
-                local timeToReachPlayer = (playerPosition - ballPosition).Magnitude / ballSpeed
-                local predictedBallPosition = ballPosition + (ballVelocity * timeToReachPlayer)
-
-                -- Calculate a look vector that anticipates the ball's curve
-                -- This is a simplified approach; real pro curving is complex and dynamic.
-                -- We'll aim slightly ahead of the ball's current trajectory towards the player.
-                local lookVector = (predictedBallPosition - rootPart.Position).Unit
-                local targetCFrame = CFrame.new(rootPart.Position, rootPart.Position + lookVector)
-
-                -- Smoothly interpolate the camera's CFrame
-                Workspace.CurrentCamera.CFrame = Workspace.CurrentCamera.CFrame:Lerp(targetCFrame, 0.2) -- Adjust lerp factor for smoothness
-            end)
+            Connections_Manager['AI Play'] = RunService.Heartbeat:Connect(handleAIPlay)
         else
+            -- Re-enable manual input when AI Play is off
+            ContextActionService:UnbindAction('BlockPlayerMovement')
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
             if Connections_Manager['AI Play'] then
                 Connections_Manager['AI Play']:Disconnect()
                 Connections_Manager['AI Play'] = nil
             end
-            -- Reset player movement and camera
-            LocalPlayer.Character.Humanoid:Move(Vector3.new(0,0,0))
-            LocalPlayer.Character.Humanoid.WalkSpeed = 16 -- Reset to default Roblox speed
-            Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-            Workspace.CurrentCamera.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 2, 8) -- Reset to default character view
         end
     end,
 })
