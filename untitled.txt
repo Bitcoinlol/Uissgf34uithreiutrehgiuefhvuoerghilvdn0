@@ -56,7 +56,7 @@ local Balls = Workspace:WaitForChild('Balls')
 local CurrentBall = nil
 local InputTask = nil
 local Cooldown = 0.02
-local RunTime = Workspace:FindFirstChild("Runtime")
+local RunTime = Workspace.FindFirstChild("Runtime")
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 local StrafeSpeed = 36
 local Training_Parried = false -- This will be handled similarly to 'Parried' for the lobby
@@ -69,6 +69,7 @@ local recentTargetChanges = {} -- New variable for tracking ball target changes
 local ForceFieldActive = false -- New variable for Force Field status
 local CurrentForceField = nil -- To store the force field instance
 local AutoSpamAntiBallBounceEnabled = false -- New variable for the anti-bounce feature
+local aiPlayActive = false -- New variable for AI Play status
 
 -- Remote detection (unchanged)
 task.spawn(function()
@@ -799,63 +800,63 @@ Window:AddToggle({
     end,
 })
 
--- New Ping-Based Parry Toggle
-Window:AddToggle({
-    Title = "Ping Based Parry",
-    Description = "Parries perfectly based on your current ping.",
-    Default = false,
-    Tab = BlatantTab,
-    Callback = function(value)
-        if value then
-            Connections_Manager['Ping Based Parry'] = RunService.PreSimulation:Connect(function()
-                local Ball = Auto_Parry.Get_Ball()
-                if not Ball then return end
-                local Zoomies = Ball:FindFirstChild('zoomies')
-                if not Zoomies then return end
+-- Removed Ping Based Parry Toggle
+-- Window:AddToggle({
+--     Title = "Ping Based Parry",
+--     Description = "Parries perfectly based on your current ping.",
+--     Default = false,
+--     Tab = BlatantTab,
+--     Callback = function(value)
+--         if value then
+--             Connections_Manager['Ping Based Parry'] = RunService.PreSimulation:Connect(function()
+--                 local Ball = Auto_Parry.Get_Ball()
+--                 if not Ball then return end
+--                 local Zoomies = Ball:FindFirstChild('zoomies')
+--                 if not Zoomies then return end
 
-                local Ball_Target = Ball:GetAttribute('target')
-                if Ball_Target ~= tostring(LocalPlayer) then return end
+--                 local Ball_Target = Ball:GetAttribute('target')
+--                 if Ball_Target ~= tostring(LocalPlayer) then return end
 
-                local Velocity = Zoomies.VectorVelocity
-                local Speed = Velocity.Magnitude
-                local Distance = (LocalPlayer.Character.PrimaryPart.Position - Ball.Position).Magnitude
-                local Ping = Stats.Network.ServerStatsItem['Data Ping']:GetValue()
+--                 local Velocity = Zoomies.VectorVelocity
+--                 local Speed = Velocity.Magnitude
+--                 local Distance = (LocalPlayer.Character.PrimaryPart.Position - Ball.Position).Magnitude
+--                 local Ping = Stats.Network.ServerStatsItem['Data Ping']:GetValue()
                 
-                -- Calculate ideal parry distance based on ping and ball speed
-                -- The goal is to parry exactly when the ball is 'Ping' milliseconds away.
-                -- Distance = Speed * Time
-                -- Time = Ping / 1000 (convert ping from ms to seconds)
-                local idealParryDistance = Speed * (Ping / 1000)
+--                 -- Calculate ideal parry distance based on ping and ball speed
+--                 -- The goal is to parry exactly when the ball is 'Ping' milliseconds away.
+--                 -- Distance = Speed * Time
+--                 -- Time = Ping / 1000 (convert ping from ms to seconds)
+--                 local idealParryDistance = Speed * (Ping / 1000)
                 
-                -- Add a small buffer for responsiveness and server-side delays
-                local parryBuffer = 0.5 -- This value might need tweaking based on testing
-                idealParryDistance = idealParryDistance + parryBuffer
+--                 -- Add a small buffer for responsiveness and server-side delays
+--                 local parryBuffer = 0.5 -- This value might need tweaking based on testing
+--                 idealParryDistance = idealParryDistance + parryBuffer
                 
-                if Distance <= idealParryDistance then
-                    if getgenv().CooldownProtection and cooldownProtection() then return end
-                    local Parry_Time = os.clock()
-                    local Time_View = Parry_Time - Last_Parry
-                    if Time_View > 0.5 then Auto_Parry.Parry_Animation() end
-                    Auto_Parry.Parry(Selected_Parry_Type)
-                    Last_Parry = Parry_Time
-                    Parried = true
-                end
+--                 if Distance <= idealParryDistance then
+--                     if getgenv().CooldownProtection and cooldownProtection() then return end
+--                     local Parry_Time = os.clock()
+--                     local Time_View = Parry_Time - Last_Parry
+--                     if Time_View > 0.5 then Auto_Parry.Parry_Animation() end
+--                     Auto_Parry.Parry(Selected_Parry_Type)
+--                     Last_Parry = Parry_Time
+--                     Parried = true
+--                 end
                 
-                -- Reset Parried status after a short delay to allow for next parry opportunity
-                local Last_Parrys = tick()
-                repeat
-                    RunService.PreSimulation:Wait()
-                until (tick() - Last_Parrys) >= 1 or not Parried
-                Parried = false
-            end)
-        else
-            if Connections_Manager['Ping Based Parry'] then
-                Connections_Manager['Ping Based Parry']:Disconnect()
-                Connections_Manager['Ping Based Parry'] = nil
-            end
-        end
-    end,
-})
+--                 -- Reset Parried status after a short delay to allow for next parry opportunity
+--                 local Last_Parrys = tick()
+--                 repeat
+--                     RunService.PreSimulation:Wait()
+--                 until (tick() - Last_Parrys) >= 1 or not Parried
+--                 Parried = false
+--             end)
+--         else
+--             if Connections_Manager['Ping Based Parry'] then
+--                 Connections_Manager['Ping Based Parry']:Disconnect()
+--                 Connections_Manager['Ping Based Parry'] = nil
+--             end
+--         end
+--     end,
+-- })
 
 
 Window:AddSlider({
@@ -1194,7 +1195,7 @@ Window:AddToggle({
                     if not AutoManualSpamEnabled then
                         toggleManualSpam(not ManualSpamActive)
                     end
-                end)
+                })
             end
         else
             if CoreGui:FindFirstChild("ManualSpamUI") then
@@ -1439,6 +1440,83 @@ Window:AddToggle({
 --- Player Tab Modules ---
 -- Player Movement Section
 Window:AddSection({ Name = "Player Movement", Tab = PlayerTab })
+
+Window:AddToggle({
+    Title = "AI Play",
+    Description = "Enables AI to play like a pro player (moves, jumps, parries, curves ball).",
+    Default = false,
+    Tab = PlayerTab,
+    Callback = function(value)
+        aiPlayActive = value
+        if value then
+            -- Enable Auto Parry and Auto Spam Parry if AI Play is active
+            if not Connections_Manager['Auto Parry'] then
+                Window.Elements["Auto Parry"]:SetValue(true) -- Enable Auto Parry
+            end
+            if not Connections_Manager['Auto Spam'] then
+                Window.Elements["Auto Spam Parry"]:SetValue(true) -- Enable Auto Spam Parry
+            end
+            
+            -- Enable Speed and set to a "pro" value
+            Window.Elements["Speed"]:SetValue(true)
+            Window.Elements["Speed Value"]:SetValue(36) -- Default pro speed
+
+            Connections_Manager['AI Play'] = RunService.Heartbeat:Connect(function()
+                local character = LocalPlayer.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+                local camera = Workspace.CurrentCamera
+                local ball = Auto_Parry.Get_Ball()
+
+                if not humanoid or not rootPart or not camera then return end
+
+                if ball and ball:GetAttribute('target') == tostring(LocalPlayer) then
+                    -- AI Movement: Move towards the ball's predicted parry point or away from danger
+                    local ballPosition = ball.Position
+                    local ballVelocity = ball.AssemblyLinearVelocity
+                    local predictTime = (ballPosition - rootPart.Position).Magnitude / ballVelocity.Magnitude
+                    local predictedPosition = ballPosition + ballVelocity * predictTime
+
+                    -- Adjust player position to be optimal for parrying/curving
+                    local targetPosition = predictedPosition - ballVelocity.Unit * 5 -- Stay slightly away from impact
+                    humanoid:MoveTo(targetPosition)
+                    
+                    -- AI Camera Control: Look at the ball for curving and tracking
+                    camera.CFrame = CFrame.new(camera.CFrame.Position, ballPosition)
+
+                    -- AI Jumping (e.g., to dodge or reach a better parry angle)
+                    if math.random(1, 100) < 5 and humanoid.FloorMaterial ~= Enum.Material.Air then -- 5% chance to jump randomly for dynamic movement
+                        humanoid.Jump = true
+                    end
+                else
+                    -- If no ball or not targeted, move randomly or to a safe spot
+                    -- Simple idle movement
+                    humanoid:Move(Vector3.new(math.random(-1,1), 0, math.random(-1,1)) * 0.1, false)
+                    -- Reset camera to default view or look around for threats
+                    camera.CFrame = camera.CFrame * CFrame.Angles(0, math.rad(math.random(-1,1)), 0)
+                end
+            end)
+        else
+            if Connections_Manager['AI Play'] then
+                Connections_Manager['AI Play']:Disconnect()
+                Connections_Manager['AI Play'] = nil
+            end
+            -- Disable AI-controlled features when AI Play is off
+            Window.Elements["Auto Parry"]:SetValue(false)
+            Window.Elements["Auto Spam Parry"]:SetValue(false)
+            Window.Elements["Speed"]:SetValue(false) -- Reset speed to default (16) handled by the Speed toggle callback
+
+            -- Reset camera and movement
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                LocalPlayer.Character.Humanoid:Move(Vector3.new(0,0,0), false) -- Stop movement
+                LocalPlayer.Character.Humanoid.Jump = false
+            end
+            Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+            Workspace.CurrentCamera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character.Humanoid
+        end
+    end,
+})
+
 
 Window:AddToggle({
     Title = "Speed",
